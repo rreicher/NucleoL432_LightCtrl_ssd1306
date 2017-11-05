@@ -84,21 +84,25 @@
 
 /* Private variables ---------------------------------------------------------*/
 COMP_HandleTypeDef hcomp1;
-
 DAC_HandleTypeDef hdac1;
-
 SPI_HandleTypeDef hspi1;
 DMA_HandleTypeDef hdma_spi1_tx;
-
 UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_tx;
+RTC_HandleTypeDef hrtc;
+RTC_TimeTypeDef sTime;
+RTC_DateTypeDef sDate;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
+
 __IO bool uart2_transmit_complete = false;
 __IO bool spi1_transmit_complete = false;
 __IO bool comp1_trig_event = false;
 static char vcpbuff[128];
+uint8_t aShowTime[10] = {0};
+uint8_t aShowDate[10] = {0};
+
 
 /* USER CODE END PV */
 
@@ -110,12 +114,11 @@ static void MX_COMP1_Init(void);
 static void MX_DAC1_Init(void);
 void MX_SPI1_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_RTC_Init(void);
+static void RTC_TimeShow(uint8_t* showtime, uint8_t* showdate);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
-//void testdrawchar(void);
-//void testdrawline(void);
-//void testdrawbitmap(const uint8_t *bitmap, uint8_t w, uint8_t h);
 
 /* USER CODE END PFP */
 
@@ -153,6 +156,8 @@ int main(void)
   MX_DAC1_Init();
 //  MX_SPI1_Init();
   MX_USART2_UART_Init();
+  MX_RTC_Init();
+
 
   /* USER CODE BEGIN 2 */
 
@@ -166,12 +171,24 @@ int main(void)
 
   printf("Nucleo64 SSD1306\r\n");
 
+  /* Initialize SSD1306 Oled */
   ssd1306_init_spi();
 	ssd1306_begin(SSD1306_SWITCHCAPVCC, SSD1306_I2C_ADDRESS, true);
+	/* Clear display will not display Adafruit Logo */
+	ssd1306_clear_display();
+	ssd1306_display();
+//	HAL_Delay(3000);
+
+	/* Welcome message */
+	ssd1306_clear_display();
+	ssd1306_set_cursor(0, 0);
+	ssd1306_set_textcolor(WHITE);
+	ssd1306_set_textsize(2);
+	ssd1306_putstring("Light Ctrl");
+	ssd1306_display();
 	HAL_Delay(1000);
 
-	ssd1306_display();
-	HAL_Delay(3000);
+
 
   /* USER CODE END 2 */
 
@@ -179,43 +196,33 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+  	RTC_TimeShow(aShowTime, aShowDate);
   	ssd1306_clear_display();
+  	ssd1306_draw_fast_hline(0, 0, 127, WHITE);
+  	ssd1306_draw_fast_hline(0, 30, 127, WHITE);
 
-  	/* Welcome message */
-  	ssd1306_set_cursor(0, 0);
-  	ssd1306_set_textcolor(WHITE);
-  	ssd1306_set_textsize(2);
-  	ssd1306_putstring("Light Ctrl");
   	ssd1306_display();
-  	HAL_Delay(1000);
 
-//		// draw a single pixel
-//		ssd1306_draw_pixel(10, 10, WHITE);
-//		ssd1306_display();
-//		HAL_Delay(1000);
-//
-//		ssd1306_draw_circle(SSD1306_LCDWIDTH / 2, SSD1306_LCDHEIGHT / 2, 30, WHITE);
-//		ssd1306_display();
-//		HAL_Delay(1000);
-//
-//		testdrawchar();
-//		HAL_Delay(1000);
-//
-//		ssd1306_clear_display();
-//		ssd1306_display();
-//		HAL_Delay(1000);
-//
-//		testdrawline();
-//
-//		ssd1306_clear_display();
-//		ssd1306_draw_bitmap(30, 16,  logo16_glcd_bmp, 16, 16, 1);
-//		ssd1306_display();
-//		HAL_Delay(1000);
-//
-//		// draw a bitmap icon and 'animate' movement
-//		testdrawbitmap(logo16_glcd_bmp, LOGO16_GLCD_HEIGHT, LOGO16_GLCD_WIDTH);
+  	ssd1306_set_cursor(12, 4);
+  	ssd1306_set_textcolor(WHITE);
+		ssd1306_set_textsize(2);
+		ssd1306_putstring(aShowTime);
 
-  /* USER CODE END WHILE */
+		ssd1306_set_cursor(40, 20);
+		ssd1306_set_textsize(1);
+		ssd1306_putstring(aShowDate);
+
+		ssd1306_set_cursor(50, 50);
+		ssd1306_set_textsize(2);
+
+		if (comp1_trig_event)	ssd1306_putstring("ON");
+		else ssd1306_putstring("OFF");
+
+		ssd1306_display();
+		HAL_Delay(1000);
+
+		/* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
 
@@ -235,15 +242,16 @@ void SystemClock_Config(void)
 
     /**Initializes the CPU, AHB and APB busses clocks 
     */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = 16;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLN = 10;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
-  RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
-  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE;
+	RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+	RCC_OscInitStruct.HSICalibrationValue = 16;
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+	RCC_OscInitStruct.PLL.PLLN = 10;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
+	RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
+	RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
@@ -265,6 +273,8 @@ void SystemClock_Config(void)
 
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART2;
   PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
@@ -301,7 +311,7 @@ static void MX_COMP1_Init(void)
   hcomp1.Init.BlankingSrce = COMP_BLANKINGSRC_NONE;
   hcomp1.Init.Mode = COMP_POWERMODE_MEDIUMSPEED;
   hcomp1.Init.WindowMode = COMP_WINDOWMODE_DISABLE;
-  hcomp1.Init.TriggerMode = COMP_TRIGGERMODE_IT_RISING;
+  hcomp1.Init.TriggerMode = COMP_TRIGGERMODE_IT_RISING_FALLING/*COMP_TRIGGERMODE_IT_RISING*/;
   if (HAL_COMP_Init(&hcomp1) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
@@ -437,117 +447,69 @@ static void MX_GPIO_Init(void)
 
 }
 
+/* RTC init function */
+static void MX_RTC_Init(void)
+{
+  /**Initialize RTC Only */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 127;
+  hrtc.Init.SynchPrediv = 255;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutRemap = RTC_OUTPUT_REMAP_NONE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  /**Initialize RTC and set the Time and Date */
+  if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != 0x32F2){
+  sTime.Hours = 0x15;
+  sTime.Minutes = 0x47;
+  sTime.Seconds = 0x0;
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sDate.WeekDay = RTC_WEEKDAY_SUNDAY;
+  sDate.Month = RTC_MONTH_NOVEMBER;
+  sDate.Date = 0x5;
+  sDate.Year = 0x17;
+
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+    HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR0,0x32F2);
+  }
+}
+
+/**
+ * @brief  Display the current time.
+  * @param  showtime : pointer to buffer
+  * @retval None
+  */
+static void RTC_TimeShow(uint8_t* showtime, uint8_t* showdate)
+{
+  RTC_DateTypeDef sdatestructureget;
+  RTC_TimeTypeDef stimestructureget;
+
+  /* Get the RTC current Time */
+  HAL_RTC_GetTime(&hrtc, &stimestructureget, RTC_FORMAT_BIN);
+  /* Get the RTC current Date */
+  HAL_RTC_GetDate(&hrtc, &sdatestructureget, RTC_FORMAT_BIN);
+  /* Display time Format : hh:mm:ss */
+  sprintf((char*)showtime,"%02d:%02d:%02d",stimestructureget.Hours, stimestructureget.Minutes, stimestructureget.Seconds);
+  sprintf((char*)showdate,"%02d/%02d/%02d",sdatestructureget.Date, sdatestructureget.Month, sdatestructureget.Year);
+}
+
 /* USER CODE BEGIN 4 */
-//void testdrawchar(void)
-//{
-//	ssd1306_clear_display();
-//	ssd1306_set_textsize(1);
-//	ssd1306_set_textcolor(WHITE);
-//	ssd1306_set_cursor(0, 0);
-//
-//	for (uint8_t i = 0; i < 168; i++) {
-//		if (i == '\n') continue;
-//		ssd1306_write(i);
-//		if ((i > 0) && (i % 21 == 0))
-//			ssd1306_write('\n');
-//	}
-//	ssd1306_display();
-//}
-//
-//
-//void testdrawline(void)
-//{
-//	for (int16_t i = 0; i < ssd1306_width(); i += 4) {
-//		ssd1306_draw_line(0, 0, i, ssd1306_height() - 1, WHITE);
-//		ssd1306_display();
-//	}
-//	for (int16_t i = 0; i < ssd1306_height(); i += 4) {
-//		ssd1306_draw_line(0, 0, ssd1306_width() - 1, i, WHITE);
-//		ssd1306_display();
-//	}
-//	HAL_Delay(250);
-//
-//	ssd1306_clear_display();
-//	for (int16_t i = 0; i < ssd1306_width(); i += 4) {
-//		ssd1306_draw_line(0, ssd1306_height() - 1, i, 0, WHITE);
-//		ssd1306_display();
-//	}
-//	for (int16_t i = ssd1306_height() - 1; i >= 0; i -= 4) {
-//		ssd1306_draw_line(0, ssd1306_height() - 1, ssd1306_width() - 1, i, WHITE);
-//		ssd1306_display();
-//	}
-//	HAL_Delay(250);
-//
-//	ssd1306_clear_display();
-//	for (int16_t i = ssd1306_width() - 1; i >= 0; i -= 4) {
-//		ssd1306_draw_line(ssd1306_width() - 1, ssd1306_height() - 1, i, 0, WHITE);
-//		ssd1306_display();
-//	}
-//	for (int16_t i = ssd1306_height() - 1; i >= 0; i -= 4) {
-//		ssd1306_draw_line(ssd1306_width() - 1, ssd1306_height() - 1, 0, i, WHITE);
-//		ssd1306_display();
-//	}
-//	HAL_Delay(250);
-//
-//	ssd1306_clear_display();
-//	for (int16_t i = 0; i < ssd1306_height(); i += 4) {
-//		ssd1306_draw_line(ssd1306_width() - 1, 0, 0, i, WHITE);
-//		ssd1306_display();
-//	}
-//	for (int16_t i = 0; i < ssd1306_width(); i += 4) {
-//		ssd1306_draw_line(ssd1306_width() - 1, 0, i, ssd1306_height() - 1, WHITE);
-//		ssd1306_display();
-//	}
-//	HAL_Delay(250);
-//
-//	ssd1306_display();
-//	HAL_Delay(250);
-//	ssd1306_clear_display();
-//}
-//
-//
-//void testdrawbitmap(const uint8_t *bitmap, uint8_t w, uint8_t h)
-//{
-//	#define NUMFLAKES 10
-//	#define XPOS 0
-//	#define YPOS 1
-//	#define DELTAY 2
-//
-//	uint8_t icons[NUMFLAKES][3];
-//
-//	// initialize
-//	for (uint8_t f = 0; f < NUMFLAKES; f++)
-//	{
-//		icons[f][XPOS] = rand() % ssd1306_width();
-//		icons[f][YPOS] = 0;
-//		icons[f][DELTAY] = (rand() % 5) + 1;
-//	}
-//
-//	while (1)
-//	{
-//		// draw each icon
-//		for (uint8_t f = 0; f < NUMFLAKES; f++)
-//		{
-//			ssd1306_draw_bitmap(icons[f][XPOS], icons[f][YPOS], logo16_glcd_bmp, w, h, WHITE);
-//		}
-//		ssd1306_display();
-//		HAL_Delay(200);
-//
-//		// then erase it + move it
-//		for (uint8_t f = 0; f < NUMFLAKES; f++)
-//		{
-//			ssd1306_draw_bitmap(icons[f][XPOS], icons[f][YPOS],  logo16_glcd_bmp, w, h, BLACK);
-//			// move it
-//			icons[f][YPOS] += icons[f][DELTAY];
-//			// if its gone, reinit
-//			if (icons[f][YPOS] > ssd1306_height()) {
-//				icons[f][XPOS] = rand() % ssd1306_width();
-//				icons[f][YPOS] = 0;
-//				icons[f][DELTAY] = (rand() % 5) + 1;
-//			}
-//		}
-//	}
-//}
 
 /**
  * @brief Tx Transfer completed callback.
@@ -585,8 +547,15 @@ void HAL_COMP_TriggerCallback(COMP_HandleTypeDef *hcomp)
   /* Prevent unused argument(s) compilation warning */
   UNUSED(hcomp);
 
-  comp1_trig_event = true;
+  if (HAL_COMP_GetOutputLevel(hcomp) == COMP_OUTPUT_LEVEL_HIGH)
+  {
+  	comp1_trig_event = true;
+  }
 
+  if (HAL_COMP_GetOutputLevel(hcomp) == COMP_OUTPUT_LEVEL_LOW)
+	{
+  	comp1_trig_event = false;
+	}
 }
 
 
